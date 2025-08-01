@@ -1,0 +1,473 @@
+-- Services that your UI will likely need.
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Players = game:GetService("Players")
+local PlayerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+-- Load the core spawner library from the source.
+local Spawner
+local success, result = pcall(function()
+	if not workspace:FindFirstChild("PetsPhysical") then
+		Instance.new("Folder", workspace).Name = "PetsPhysical"
+	end
+	Spawner = loadstring(game:HttpGet("https://codeberg.org/GrowAFilipino/GrowAGarden/raw/branch/main/Spawner.lua", true))()
+end)
+
+-- If the library fails to load, stop the script.
+if not success or not Spawner then
+	warn("Spawner Library could not be loaded. Details: " .. tostring(result))
+	return
+end
+
+-- A helper function to safely get data tables from the library.
+local function GetSafeData(fetchFunction)
+	local data = {}
+	local success, result = pcall(fetchFunction)
+	if success and type(result) == "table" then
+		data = result
+		table.sort(data)
+	end
+	return data
+end
+
+-- Fetch the item names. You will use these tables to populate your UI lists.
+local pet_names = GetSafeData(function() return Spawner:GetPets() end)
+local seed_names = GetSafeData(function() return Spawner:GetSeeds() end)
+local egg_names = GetSafeData(function() return Spawner:GetEggs() end)
+
+-- This is where you will write the code for your custom UI.
+local function BuildYourInterface()
+	
+	-- If a previous UI exists, destroy it.
+	if PlayerGui:FindFirstChild("SpawnerGUI") then
+		PlayerGui.SpawnerGUI:Destroy()
+	end
+
+	-- Theme and Configuration
+	local theme = {
+		Background = Color3.fromRGB(30, 30, 30),
+		Primary = Color3.fromRGB(45, 45, 45),
+		Secondary = Color3.fromRGB(60, 60, 60),
+		Text = Color3.fromRGB(240, 240, 240),
+		Highlight = Color3.fromRGB(80, 80, 80),
+		Accent = Color3.fromRGB(0, 150, 255),
+		Font = Enum.Font.SourceSans,
+		BoldFont = Enum.Font.SourceSansBold,
+	}
+
+	-- State Variables
+	local selectedPet, selectedSeed, selectedEgg = nil, nil, nil
+	local selectedPetButton, selectedSeedButton, selectedEggButton = nil, nil, nil
+
+	-- Create the main ScreenGui
+	local screenGui = Instance.new("ScreenGui")
+	screenGui.Name = "SpawnerGUI"
+	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+	screenGui.ResetOnSpawn = false
+	screenGui.Parent = PlayerGui
+
+	-- Main Window
+	local mainFrame = Instance.new("Frame")
+	mainFrame.Name = "MainFrame"
+	mainFrame.Size = UDim2.new(0, 550, 0, 400)
+	mainFrame.Position = UDim2.new(0.5, -275, 0.5, -200)
+	mainFrame.BackgroundColor3 = theme.Background
+	mainFrame.BorderSizePixel = 0
+	mainFrame.Parent = screenGui
+
+	local mainCorner = Instance.new("UICorner")
+	mainCorner.CornerRadius = UDim.new(0, 8)
+	mainCorner.Parent = mainFrame
+
+	local mainStroke = Instance.new("UIStroke")
+	mainStroke.Color = theme.Primary
+	mainStroke.Thickness = 1
+	mainStroke.Parent = mainFrame
+
+	-- Header
+	local header = Instance.new("Frame")
+	header.Name = "Header"
+	header.Size = UDim2.new(1, 0, 0, 35)
+	header.BackgroundColor3 = theme.Primary
+	header.BorderSizePixel = 0
+	header.Parent = mainFrame
+
+	local headerCorner = Instance.new("UICorner")
+	headerCorner.CornerRadius = UDim.new(0, 8)
+	headerCorner.Parent = header
+
+	local titleLabel = Instance.new("TextLabel")
+	titleLabel.Name = "TitleLabel"
+	titleLabel.Size = UDim2.new(1, -40, 1, 0)
+	titleLabel.Position = UDim2.new(0, 0, 0, 0)
+	titleLabel.BackgroundColor3 = theme.Primary
+	titleLabel.BackgroundTransparency = 1
+	titleLabel.Text = "Item Spawner"
+	titleLabel.Font = theme.BoldFont
+	titleLabel.TextColor3 = theme.Text
+	titleLabel.TextSize = 16
+	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+	titleLabel.TextWrapped = true
+	titleLabel.Parent = header
+	
+	local headerPadding = Instance.new("UIPadding")
+	headerPadding.PaddingLeft = UDim.new(0, 15)
+	headerPadding.Parent = titleLabel
+	
+	-- Close Button
+	local closeButton = Instance.new("TextButton")
+	closeButton.Name = "CloseButton"
+	closeButton.Size = UDim2.new(0, 35, 1, 0)
+	closeButton.Position = UDim2.new(1, -35, 0, 0)
+	closeButton.BackgroundColor3 = theme.Primary
+	closeButton.Text = "X"
+	closeButton.Font = theme.BoldFont
+	closeButton.TextColor3 = theme.Text
+	closeButton.TextSize = 16
+	closeButton.Parent = header
+	closeButton.MouseButton1Click:Connect(function()
+		screenGui:Destroy()
+	end)
+
+	-- Drag functionality for the header
+	local dragging = false
+	local dragInput, dragStart, startPos
+	header.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			dragStart = input.Position
+			startPos = mainFrame.Position
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
+			end)
+		end
+	end)
+	header.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			if dragging then
+				local delta = input.Position - dragStart
+				mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+			end
+		end
+	end)
+
+	-- Tab Container
+	local tabContainer = Instance.new("Frame")
+	tabContainer.Name = "TabContainer"
+	tabContainer.Size = UDim2.new(0, 120, 1, -35)
+	tabContainer.Position = UDim2.new(0, 0, 0, 35)
+	tabContainer.BackgroundColor3 = theme.Background
+	tabContainer.BorderSizePixel = 0
+	tabContainer.Parent = mainFrame
+	
+	local tabLayout = Instance.new("UIListLayout")
+	tabLayout.Padding = UDim.new(0, 5)
+	tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	tabLayout.Parent = tabContainer
+	
+	local tabPadding = Instance.new("UIPadding")
+	tabPadding.PaddingTop = UDim.new(0, 10)
+	tabPadding.PaddingLeft = UDim.new(0, 10)
+	tabPadding.PaddingRight = UDim.new(0, 10)
+	tabPadding.Parent = tabContainer
+
+	-- Content Container
+	local contentContainer = Instance.new("Frame")
+	contentContainer.Name = "ContentContainer"
+	contentContainer.Size = UDim2.new(1, -120, 1, -35)
+	contentContainer.Position = UDim2.new(0, 120, 0, 35)
+	contentContainer.BackgroundColor3 = theme.Background
+	contentContainer.BackgroundTransparency = 1
+	contentContainer.Parent = mainFrame
+	
+	local contentPadding = Instance.new("UIPadding")
+	contentPadding.PaddingTop = UDim.new(0, 10)
+	contentPadding.PaddingLeft = UDim.new(0, 10)
+	contentPadding.PaddingRight = UDim.new(0, 10)
+	contentPadding.PaddingBottom = UDim.new(0, 10)
+	contentPadding.Parent = contentContainer
+
+	-- Tab and Content Creation Logic
+	local tabs = {}
+	local function createTab(name, order)
+		local contentFrame = Instance.new("Frame")
+		contentFrame.Name = name .. "Content"
+		contentFrame.Size = UDim2.new(1, 0, 1, 0)
+		contentFrame.BackgroundColor3 = theme.Background
+		contentFrame.BackgroundTransparency = 1
+		contentFrame.Visible = false
+		contentFrame.Parent = contentContainer
+
+		local tabButton = Instance.new("TextButton")
+		tabButton.Name = name .. "Tab"
+		tabButton.Size = UDim2.new(1, 0, 0, 30)
+		tabButton.BackgroundColor3 = theme.Primary
+		tabButton.Text = name
+		tabButton.Font = theme.BoldFont
+		tabButton.TextColor3 = theme.Text
+		tabButton.TextSize = 14
+		tabButton.LayoutOrder = order
+		tabButton.Parent = tabContainer
+
+		local tabCorner = Instance.new("UICorner")
+		tabCorner.CornerRadius = UDim.new(0, 4)
+		tabCorner.Parent = tabButton
+
+		tabs[name] = {button = tabButton, content = contentFrame}
+		return contentFrame
+	end
+	
+	local petsContent = createTab("Pets", 1)
+	local seedsContent = createTab("Seeds", 2)
+	local eggsContent = createTab("Eggs", 3)
+	local utilsContent = createTab("Utilities", 4)
+	
+	local activeTab = nil
+	local function switchTab(name)
+		if activeTab and tabs[activeTab] then
+			tabs[activeTab].content.Visible = false
+			tabs[activeTab].button.BackgroundColor3 = theme.Primary
+		end
+		activeTab = name
+		tabs[name].content.Visible = true
+		tabs[name].button.BackgroundColor3 = theme.Highlight
+	end
+
+	for name, tabData in pairs(tabs) do
+		tabData.button.MouseButton1Click:Connect(function()
+			switchTab(name)
+		end)
+	end
+	
+	-- Helper function to create a text box with a label
+	local function createTextBox(parent, labelText, position)
+		local container = Instance.new("Frame")
+		container.Size = UDim2.new(1, 0, 0, 25)
+		container.Position = position
+		container.BackgroundTransparency = 1
+		container.Parent = parent
+
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.new(0.3, 0, 1, 0)
+		label.BackgroundTransparency = 1
+		label.Text = labelText .. ":"
+		label.Font = theme.Font
+		label.TextColor3 = theme.Text
+		label.TextSize = 14
+		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.Parent = container
+
+		local textbox = Instance.new("TextBox")
+		textbox.Size = UDim2.new(0.7, 0, 1, 0)
+		textbox.Position = UDim2.new(0.3, 0, 0, 0)
+		textbox.BackgroundColor3 = theme.Primary
+		textbox.Text = "1"
+		textbox.Font = theme.Font
+		textbox.TextColor3 = theme.Text
+		textbox.TextSize = 14
+		textbox.ClearTextOnFocus = false
+		textbox.Parent = container
+
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, 4)
+		corner.Parent = textbox
+		
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = theme.Secondary
+		stroke.Thickness = 1
+		stroke.Parent = textbox
+
+		return textbox
+	end
+
+	-- Helper to create a ScrollingFrame list
+	local function createItemList(parent, itemTable, onSelectCallback)
+		local listFrame = Instance.new("ScrollingFrame")
+		listFrame.Size = UDim2.new(1, 0, 1, -110) -- Adjusted for inputs and spawn button
+		listFrame.BackgroundColor3 = theme.Primary
+		listFrame.BorderSizePixel = 0
+		listFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+		listFrame.ScrollBarImageColor3 = theme.Accent
+		listFrame.ScrollBarThickness = 5
+		listFrame.Parent = parent
+
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, 4)
+		corner.Parent = listFrame
+		
+		local listLayout = Instance.new("UIListLayout")
+		listLayout.Padding = UDim.new(0, 3)
+		listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+		listLayout.Parent = listFrame
+
+		local listPadding = Instance.new("UIPadding")
+		listPadding.PaddingTop = UDim.new(0, 5)
+		listPadding.PaddingLeft = UDim.new(0, 5)
+		listPadding.PaddingRight = UDim.new(0, 5)
+		listPadding.Parent = listFrame
+
+		for _, itemName in ipairs(itemTable) do
+			local itemButton = Instance.new("TextButton")
+			itemButton.Name = itemName
+			itemButton.Size = UDim2.new(1, 0, 0, 25)
+			itemButton.BackgroundColor3 = theme.Primary
+			itemButton.Text = itemName
+			itemButton.Font = theme.Font
+			itemButton.TextColor3 = theme.Text
+			itemButton.TextSize = 14
+			itemButton.Parent = listFrame
+
+			local itemCorner = Instance.new("UICorner")
+			itemCorner.CornerRadius = UDim.new(0, 4)
+			itemCorner.Parent = itemButton
+
+			itemButton.MouseButton1Click:Connect(function()
+				onSelectCallback(itemName, itemButton)
+			end)
+		end
+		
+		return listFrame
+	end
+	
+	-- Helper to create a main action button
+	local function createActionButton(parent, text)
+		local button = Instance.new("TextButton")
+		button.Name = "ActionButton"
+		button.Size = UDim2.new(1, 0, 0, 35)
+		button.AnchorPoint = Vector2.new(0, 1)
+		button.Position = UDim2.new(0, 0, 1, 0)
+		button.BackgroundColor3 = theme.Accent
+		button.Text = text
+		button.Font = theme.BoldFont
+		button.TextColor3 = Color3.new(1, 1, 1)
+		button.TextSize = 16
+		button.Parent = parent
+
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, 4)
+		corner.Parent = button
+
+		return button
+	end
+
+	--- Populate Pets Tab ---
+	local petListFrame = createItemList(petsContent, pet_names, function(itemName, button)
+		if selectedPetButton then
+			selectedPetButton.BackgroundColor3 = theme.Primary
+		end
+		selectedPet = itemName
+		selectedPetButton = button
+		selectedPetButton.BackgroundColor3 = theme.Highlight
+	end)
+	local amountInput = createTextBox(petsContent, "Amount", UDim2.new(0, 0, 1, -95))
+	local kgInput = createTextBox(petsContent, "KG", UDim2.new(0, 0, 1, -70))
+	local ageInput = createTextBox(petsContent, "Age", UDim2.new(0, 0, 1, -45))
+	local spawnPetButton = createActionButton(petsContent, "Spawn Pet")
+	
+	--- Populate Seeds Tab ---
+	local seedListFrame = createItemList(seedsContent, seed_names, function(itemName, button)
+		if selectedSeedButton then
+			selectedSeedButton.BackgroundColor3 = theme.Primary
+		end
+		selectedSeed = itemName
+		selectedSeedButton = button
+		selectedSeedButton.BackgroundColor3 = theme.Highlight
+	end)
+	seedListFrame.Size = UDim2.new(1, 0, 1, -45) -- Adjust size as it has no inputs
+	local placeSeedButton = createActionButton(seedsContent, "Place Seed")
+
+	--- Populate Eggs Tab ---
+	local eggListFrame = createItemList(eggsContent, egg_names, function(itemName, button)
+		if selectedEggButton then
+			selectedEggButton.BackgroundColor3 = theme.Primary
+		end
+		selectedEgg = itemName
+		selectedEggButton = button
+		selectedEggButton.BackgroundColor3 = theme.Highlight
+	end)
+	eggListFrame.Size = UDim2.new(1, 0, 1, -45) -- Adjust size as it has no inputs
+	local spawnEggButton = createActionButton(eggsContent, "Spawn Egg")
+	
+	--- Populate Utilities Tab ---
+	local dupeItemButton = Instance.new("TextButton")
+	dupeItemButton.Name = "DupeItemButton"
+	dupeItemButton.Size = UDim2.new(1, 0, 0, 35)
+	dupeItemButton.Position = UDim2.new(0, 0, 0, 0)
+	dupeItemButton.BackgroundColor3 = theme.Secondary
+	dupeItemButton.Text = "Duplicate Held Item"
+	dupeItemButton.Font = theme.BoldFont
+	dupeItemButton.TextColor3 = theme.Text
+	dupeItemButton.TextSize = 14
+	dupeItemButton.Parent = utilsContent
+	local dupeCorner = Instance.new("UICorner")
+	dupeCorner.CornerRadius = UDim.new(0, 4)
+	dupeCorner.Parent = dupeItemButton
+
+	--- Handler Functions (from template, adapted) ---
+	local function handleSpawnPet(petName, amount, kg, age)
+		if not petName then warn("No pet selected.") return end
+		local numAmount = tonumber(amount) or 1
+		local numKg = tonumber(kg) or 1
+		local numAge = tonumber(age) or 1
+		
+		for i = 1, numAmount do
+			Spawner.SpawnPet(petName, numKg, numAge)
+			task.wait()
+		end
+	end
+
+	local function handlePlaceSeed(seedName)
+		if not seedName then warn("No seed selected.") return end
+		if Spawner.PlaceSeed then
+			Spawner.PlaceSeed(seedName)
+		end
+	end
+	
+	local function handleSpawnEgg(eggName)
+		if not eggName then warn("No egg selected.") return end
+		if Spawner.SpawnEgg then
+			Spawner.SpawnEgg(eggName)
+		else
+			warn("The Spawner library does not have a SpawnEgg function.")
+		end
+	end
+
+	local function handleDupeItem()
+		local player = Players.LocalPlayer
+		local character = player.Character
+		if not character then return end
+		
+		local heldTool = character:FindFirstChildOfClass("Tool")
+		if heldTool then
+			heldTool:Clone().Parent = player:FindFirstChildOfClass("Backpack")
+		else
+			warn("No tool equipped to duplicate.")
+		end
+	end
+	
+	-- Connect Buttons to Handlers
+	spawnPetButton.MouseButton1Click:Connect(function()
+		handleSpawnPet(selectedPet, amountInput.Text, kgInput.Text, ageInput.Text)
+	end)
+	
+	placeSeedButton.MouseButton1Click:Connect(function()
+		handlePlaceSeed(selectedSeed)
+	end)
+	
+	spawnEggButton.MouseButton1Click:Connect(function()
+		handleSpawnEgg(selectedEgg)
+	end)
+	
+	dupeItemButton.MouseButton1Click:Connect(function()
+		handleDupeItem()
+	end)
+	
+	-- Set the initial tab
+	switchTab("Pets")
+
+end
+
+-- Run the function to start building your UI.
+BuildYourInterface()
